@@ -162,7 +162,61 @@ class YtSelection:
             await deleteMessage(self.__reply_to)
         return self.qual
 
-    # ... rest of YtSelection class unchanged ...
+    async def back_to_main(self):
+        if self.__is_playlist:
+            msg = f'Choose Playlist Videos Quality:\nTimeout: {get_readable_time(self.__timeout-(time()-self.__time))}'
+        else:
+            msg = f'Choose Video Quality:\nTimeout: {get_readable_time(self.__timeout-(time()-self.__time))}'
+        await editMessage(self.__reply_to, msg, self.__main_buttons)
+
+    async def qual_subbuttons(self, b_name):
+        buttons = ButtonMaker()
+        tbr_dict = self.formats[b_name]
+        for tbr, d_data in tbr_dict.items():
+            button_name = f'{tbr}K ({get_readable_file_size(d_data[0])})'
+            buttons.ibutton(button_name, f'ytq sub {b_name} {tbr}')
+        buttons.ibutton('Back', 'ytq back', 'footer')
+        buttons.ibutton('Cancel', 'ytq cancel', 'footer')
+        subbuttons = buttons.build_menu(2)
+        msg = f'Choose Bit rate for <b>{b_name}</b>:\nTimeout: {get_readable_time(self.__timeout-(time()-self.__time))}'
+        await editMessage(self.__reply_to, msg, subbuttons)
+
+    async def mp3_subbuttons(self):
+        i = 's' if self.__is_playlist else ''
+        buttons = ButtonMaker()
+        audio_qualities = [64, 128, 320]
+        for q in audio_qualities:
+            audio_format = f'ba/b-mp3-{q}'
+            buttons.ibutton(f'{q}K-mp3', f'ytq {audio_format}')
+        buttons.ibutton('Back', 'ytq back')
+        buttons.ibutton('Cancel', 'ytq cancel')
+        subbuttons = buttons.build_menu(3)
+        msg = f'Choose mp3 Audio{i} Bitrate:\nTimeout: {get_readable_time(self.__timeout-(time()-self.__time))}'
+        await editMessage(self.__reply_to, msg, subbuttons)
+
+    async def audio_format(self):
+        i = 's' if self.__is_playlist else ''
+        buttons = ButtonMaker()
+        for frmt in ['aac', 'alac', 'flac', 'm4a', 'opus', 'vorbis', 'wav']:
+            audio_format = f'ba/b-{frmt}-'
+            buttons.ibutton(frmt, f'ytq aq {audio_format}')
+        buttons.ibutton('Back', 'ytq back', 'footer')
+        buttons.ibutton('Cancel', 'ytq cancel', 'footer')
+        subbuttons = buttons.build_menu(3)
+        msg = f'Choose Audio{i} Format:\nTimeout: {get_readable_time(self.__timeout-(time()-self.__time))}'
+        await editMessage(self.__reply_to, msg, subbuttons)
+
+    async def audio_quality(self, format):
+        i = 's' if self.__is_playlist else ''
+        buttons = ButtonMaker()
+        for qual in range(11):
+            audio_format = f'{format}{qual}'
+            buttons.ibutton(qual, f'ytq {audio_format}')
+        buttons.ibutton('Back', 'ytq aq back')
+        buttons.ibutton('Cancel', 'ytq aq cancel')
+        subbuttons = buttons.build_menu(5)
+        msg = f'Choose Audio{i} Quality:\n0 is best and 10 is worst\nTimeout: {get_readable_time(self.__timeout-(time()-self.__time))}'
+        await editMessage(self.__reply_to, msg, subbuttons)
 
 
 def extract_info(link, options):
@@ -193,6 +247,113 @@ async def _ytdl(client, message, isLeech=False, sameDir=None, bulk=[]):
     arg_base = {'link': '', 
                 '-i': 0, 
                 '-m': '', '-sd': '', '-samedir': '',
+                '-s': False, '-select': False,
+                '-opt': '', '-options': '',
+                '-b': False, '-bulk': False,
+                '-n': '', '-name': '',
+                '-z': False, '-zip': False,
+                '-up': '', '-upload': False,
+                '-rcf': '',
+                '-id': '',
+                '-index': '',
+                '-c': '', '-category': '',
+                '-ud': '', '-dump': '',
+                '-ss': '0', '-screenshots': '',
+                '-t': '', '-thumb': '',
+    }
+
+    args = arg_parser(input_list[1:], arg_base)
+    cmd = input_list[0].split('@')[0]
+
+    # safe parsing of -i
+    try:
+        multi = int(args['-i'])
+    except:
+        multi = 0
+
+    select      = args['-s'] or args['-select']
+    isBulk      = args['-b'] or args['-bulk']
+    opt         = args['-opt'] or args['-options']
+    folder_name = args['-m'] or args['-sd'] or args['-samedir']
+    name        = args['-n'] or args['-name']
+    up          = args['-up'] or args['-upload']
+    rcf         = args['-rcf']
+    link        = args['link']
+    compress    = args['-z'] or args['-zip'] or 'z' in cmd or 'zip' in cmd
+    drive_id    = args['-id']
+    index_link  = args['-index']
+    gd_cat      = args['-c'] or args['-category']
+    user_dump   = args['-ud'] or args['-dump']
+    bulk_start  = 0
+    bulk_end    = 0
+    thumb       = args['-t'] or args['-thumb']
+    sshots      = int(ss) if (ss := (args['-ss'] or args['-screenshots'])).isdigit() else 0
+
+    # safe bulk parsing
+    if not isinstance(isBulk, bool):
+        dargs = isBulk.split(':')
+        bulk_start = dargs[0] or None
+        if len(dargs) == 2:
+            bulk_end = dargs[1] or None
+        isBulk = True
+
+    # safe Google Drive id parsing
+    if drive_id and is_gdrive_link(drive_id):
+        drive_id = GoogleDriveHelper.getIdFromUrl(drive_id)
+
+    if folder_name and not isBulk:
+        folder_name = f'/{folder_name}'
+        if sameDir is None:
+            sameDir = {'total': multi, 'tasks': set(), 'name': folder_name}
+        sameDir['tasks'].add(message.id)
+
+    # Safe Tag parsing (fix unpack error)
+    tag = None
+    if len(text) > 1 and text[1].startswith('Tag: '):
+        try:
+            parts = text[1].split('Tag: ')[1].split(maxsplit=1)
+            tag = parts[0]
+            if len(parts) > 1:
+                id_ = parts[1]
+                message.from_user = await client.get_users(id_)
+                try:
+                    await message.unpin()
+                except:
+                    pass
+        except Exception as e:
+            LOGGER.error(f"Failed to parse Tag line: {text[1]} - {e}")
+            tag = None
+    elif sender_chat := message.sender_chat:
+        tag = sender_chat.title
+
+    # Default tag
+    if not tag:
+        if username := message.from_user.username:
+            tag = f'@{username}'
+        else:
+            tag = message.from_user.mention
+
+    # Bulk handling
+    if isBulk:
+        try:
+            bulk = await extract_bulk_links(message, bulk_start, bulk_end)
+            if len(bulk) == 0:
+                raise ValueError('Bulk Empty!')
+        except:
+            await sendMessage(message, 'Reply to text file or tg message that have links seperated by new line!')
+            return
+        b_msg = input_list[:1]
+        b_msg.append(f'{bulk[0]} -i {len(bulk)}')
+        nextmsg = await sendMessage(message, " ".join(b_msg))
+        nextmsg = await client.get_messages(chat_id=message.chat.id, message_ids=nextmsg.id)
+        nextmsg.from_user = message.from_user
+        _ytdl(client, nextmsg, isLeech, sameDir, bulk)
+        return
+
+    if len(bulk) != 0:
+        del bulk[0]
+
+    # More code continues...
                 '-s': False, '-select': False,
                 '-opt': '', '-options': '',
                 '-b': False, '-bulk': False,
