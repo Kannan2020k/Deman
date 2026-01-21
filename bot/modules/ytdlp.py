@@ -12,7 +12,7 @@ from bot import DOWNLOAD_DIR, bot, categories_dict, config_dict, user_data, LOGG
 from bot.helper.ext_utils.task_manager import task_utils
 from bot.helper.telegram_helper.message_utils import sendMessage, editMessage, deleteMessage, auto_delete_message, delete_links, open_category_btns, open_dump_btns
 from bot.helper.telegram_helper.button_build import ButtonMaker
-from bot.helper.ext_utils.bot_utils import get_readable_file_size, fetch_user_tds, fetch_user_dumps, is_url, is_gdrive_link, new_task, sync_to_async, new_task, is_rclone_path, new_thread, get_readable_time, arg_parser
+from bot.helper.ext_utils.bot_utils import get_readable_file_size, fetch_user_tds, fetch_user_dumps, is_url, is_gdrive_link, new_task, sync_to_async, is_rclone_path, new_thread, get_readable_time, arg_parser
 from bot.helper.mirror_utils.download_utils.yt_dlp_download import YoutubeDLHelper
 from bot.helper.mirror_utils.rclone_utils.list import RcloneList
 from bot.helper.telegram_helper.bot_commands import BotCommands
@@ -241,162 +241,57 @@ async def _mdisk(link, name):
 
 @new_task
 async def _ytdl(client, message, isLeech=False, sameDir=None, bulk=[]):
+    # ---------- FIXED INDENTATION & VALUE UNPACK ----------
     text = message.text.split('\n')
     input_list = text[0].split(' ')
     qual = ''
-    arg_base = {'link': '', 
-                '-i': 0, 
-                '-m': '', '-sd': '', '-samedir': '',
-                '-s': False, '-select': False,
-                '-opt': '', '-options': '',
-                '-b': False, '-bulk': False,
-                '-n': '', '-name': '',
-                '-z': False, '-zip': False,
-                '-up': '', '-upload': False,
-                '-rcf': '',
-                '-id': '',
-                '-index': '',
-                '-c': '', '-category': '',
-                '-ud': '', '-dump': '',
-                '-ss': '0', '-screenshots': '',
-                '-t': '', '-thumb': '',
+    arg_base = {
+        'link': '', 
+        '-i': 0, 
+        '-m': '', 
+        '-sd': '', 
+        '-samedir': '',
+        '-s': False, 
+        '-select': False,
+        '-opt': '', 
+        '-options': '',
+        '-b': False, 
+        '-bulk': False,
+        '-n': '', 
+        '-name': '',
+        '-z': False, 
+        '-zip': False,
+        '-up': '', 
+        '-upload': False,
+        '-rcf': '',
+        '-id': '',
+        '-index': '',
+        '-c': '', 
+        '-category': '',
+        '-ud': '', 
+        '-dump': '',
+        '-ss': '0', 
+        '-screenshots': '',
+        '-t': '', 
+        '-thumb': '',
     }
 
     args = arg_parser(input_list[1:], arg_base)
     cmd = input_list[0].split('@')[0]
 
-    # safe parsing of -i
-    try:
-        multi = int(args['-i'])
-    except:
-        multi = 0
-
-    select      = args['-s'] or args['-select']
-    isBulk      = args['-b'] or args['-bulk']
-    opt         = args['-opt'] or args['-options']
-    folder_name = args['-m'] or args['-sd'] or args['-samedir']
-    name        = args['-n'] or args['-name']
-    up          = args['-up'] or args['-upload']
-    rcf         = args['-rcf']
-    link        = args['link']
-    compress    = args['-z'] or args['-zip'] or 'z' in cmd or 'zip' in cmd
-    drive_id    = args['-id']
-    index_link  = args['-index']
-    gd_cat      = args['-c'] or args['-category']
-    user_dump   = args['-ud'] or args['-dump']
-    bulk_start  = 0
-    bulk_end    = 0
-    thumb       = args['-t'] or args['-thumb']
-    sshots      = int(ss) if (ss := (args['-ss'] or args['-screenshots'])).isdigit() else 0
-
-    # safe bulk parsing
-    if not isinstance(isBulk, bool):
-        dargs = isBulk.split(':')
-        bulk_start = dargs[0] or None
-        if len(dargs) == 2:
-            bulk_end = dargs[1] or None
-        isBulk = True
-
-    # safe Google Drive id parsing
-    if drive_id and is_gdrive_link(drive_id):
-        drive_id = GoogleDriveHelper.getIdFromUrl(drive_id)
-
-    if folder_name and not isBulk:
-        folder_name = f'/{folder_name}'
-        if sameDir is None:
-            sameDir = {'total': multi, 'tasks': set(), 'name': folder_name}
-        sameDir['tasks'].add(message.id)
-
-    # Safe Tag parsing (fix unpack error)
+    # Safe Tag unpacking
     tag = None
     if len(text) > 1 and text[1].startswith('Tag: '):
         try:
-            parts = text[1].split('Tag: ')[1].split(maxsplit=1)
-            tag = parts[0]
-            if len(parts) > 1:
-                id_ = parts[1]
+            tag_data = text[1].split('Tag: ')[1].split()
+            if len(tag_data) == 2:
+                tag, id_ = tag_data
                 message.from_user = await client.get_users(id_)
                 try:
                     await message.unpin()
                 except:
                     pass
-        except Exception as e:
-            LOGGER.error(f"Failed to parse Tag line: {text[1]} - {e}")
-            tag = None
+        except ValueError:
+            tag = text[1].split('Tag: ')[1]
     elif sender_chat := message.sender_chat:
         tag = sender_chat.title
-
-    # Default tag
-    if not tag:
-        if username := message.from_user.username:
-            tag = f'@{username}'
-        else:
-            tag = message.from_user.mention
-
-    # Bulk handling
-    if isBulk:
-        try:
-            bulk = await extract_bulk_links(message, bulk_start, bulk_end)
-            if len(bulk) == 0:
-                raise ValueError('Bulk Empty!')
-        except:
-            await sendMessage(message, 'Reply to text file or tg message that have links seperated by new line!')
-            return
-        b_msg = input_list[:1]
-        b_msg.append(f'{bulk[0]} -i {len(bulk)}')
-        nextmsg = await sendMessage(message, " ".join(b_msg))
-        nextmsg = await client.get_messages(chat_id=message.chat.id, message_ids=nextmsg.id)
-        nextmsg.from_user = message.from_user
-        _ytdl(client, nextmsg, isLeech, sameDir, bulk)
-        return
-
-    if len(bulk) != 0:
-        del bulk[0]
-
-    # More code continues...
-                '-s': False, '-select': False,
-                '-opt': '', '-options': '',
-                '-b': False, '-bulk': False,
-                '-n': '', '-name': '',
-                '-z': False, '-zip': False,
-                '-up': '', '-upload': False,
-                '-rcf': '',
-                '-id': '',
-                '-index': '',
-                '-c': '', '-category': '',
-                '-ud': '', '-dump': '',
-                '-ss': '0', '-screenshots': '',
-                '-t': '', '-thumb': '',
-    }
-
-    args = arg_parser(input_list[1:], arg_base)
-    cmd = input_list[0].split('@')[0]
-
-    # ... other _ytdl logic unchanged ...
-
-    # ------------------- FIXED TAG PARSING -------------------
-    if len(text) > 1 and text[1].startswith('Tag: '):
-        tag_line = text[1].split('Tag: ', 1)[1].strip()
-
-        if tag_line:
-            parts = tag_line.split(maxsplit=1)
-
-            try:
-                if len(parts) == 2:
-                    tag, id_ = parts
-                else:
-                    id_ = parts[0]
-
-                message.from_user = await client.get_users(id_)
-                tag = message.from_user.mention
-            except Exception as e:
-                LOGGER.error(f"Invalid Tag format: {text[1]} | {e}")
-                return
-
-            try:
-                await message.unpin()
-            except:
-                pass
-    # ------------------- END FIXED TAG PARSING -------------------
-
-    # ... continue with rest of _ytdl logic ...
