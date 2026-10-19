@@ -8,6 +8,7 @@ from yt_dlp import YoutubeDL
 from functools import partial
 from time import time
 
+
 from bot import DOWNLOAD_DIR, bot, categories_dict, config_dict, user_data, LOGGER
 from bot.helper.ext_utils.task_manager import task_utils
 from bot.helper.telegram_helper.message_utils import sendMessage, editMessage, deleteMessage, auto_delete_message, delete_links, open_category_btns, open_dump_btns
@@ -244,8 +245,8 @@ async def _ytdl(client, message, isLeech=False, sameDir=None, bulk=[]):
     text = message.text.split('\n')
     input_list = text[0].split(' ')
     qual = ''
-    arg_base = {'link': '', 
-                '-i': 0, 
+    arg_base = {'link': '',
+                '-i': 0,
                 '-m': '', '-sd': '', '-samedir': '',
                 '-s': False, '-select': False,
                 '-opt': '', '-options': '',
@@ -287,7 +288,7 @@ async def _ytdl(client, message, isLeech=False, sameDir=None, bulk=[]):
     bulk_end    = 0
     thumb       = args['-t'] or args['-thumb']
     sshots      = int(ss) if (ss := (args['-ss'] or args['-screenshots'])).isdigit() else 0
-    
+
 
     if not isinstance(isBulk, bool):
         dargs = isBulk.split(':')
@@ -295,7 +296,7 @@ async def _ytdl(client, message, isLeech=False, sameDir=None, bulk=[]):
         if len(dargs) == 2:
             bulk_end = dargs[1] or None
         isBulk = True
-        
+
     if drive_id and is_gdrive_link(drive_id):
         drive_id = GoogleDriveHelper.getIdFromUrl(drive_id)
 
@@ -363,7 +364,7 @@ async def _ytdl(client, message, isLeech=False, sameDir=None, bulk=[]):
     user_dict = user_data.get(user_id, {})
 
     opt = opt or user_dict.get('yt_opt') or config_dict['YT_DLP_OPTIONS']
-    
+
     if username := message.from_user.username:
         tag = f'@{username}'
     else:
@@ -518,7 +519,7 @@ async def _ytdl(client, message, isLeech=False, sameDir=None, bulk=[]):
     playlist = 'entries' in result
     ydl = YoutubeDLHelper(listener)
     await ydl.add_download(link, path, name, qual, playlist, opt)
-    
+
 
 
 async def ytdl(client, message):
