@@ -470,28 +470,76 @@ async def _ytdl(client, message, isLeech=False, sameDir=None, bulk=[]):
     if 'mdisk.me' in link:
         name, link = await _mdisk(link, name)
 
+   
     options = {'usenetrc': True, 'cookiefile': 'cookies.txt'}
+
     if opt:
         yt_opt = opt.split('|')
+
         for ytopt in yt_opt:
+            ytopt = ytopt.strip()
+
+            if not ytopt:
+                continue
+
+            if ':' not in ytopt:
+                LOGGER.warning(
+                    f"Invalid YT-DLP option skipped: {ytopt!r}"
+                )
+                continue
+
             key, value = map(str.strip, ytopt.split(':', 1))
+
+            if not key:
+                LOGGER.warning(
+                    f"Empty YT-DLP option key skipped: {ytopt!r}"
+                )
+                continue
+
             if key == 'format':
                 if select:
                     qual = ''
                 elif value.startswith('ba/b-'):
                     qual = value
                     continue
+
             if value.startswith('^'):
-                if '.' in value or value == '^inf':
-                    value = float(value.split('^')[1])
-                else:
-                    value = int(value.split('^')[1])
+                number = value[1:]
+
+                if not number:
+                    LOGGER.warning(
+                        f"Invalid numeric YT-DLP option: {ytopt!r}"
+                    )
+                    continue
+
+                try:
+                    value = float(number) if (
+                        '.' in number or number == 'inf'
+                    ) else int(number)
+                except ValueError:
+                    LOGGER.warning(
+                        f"Invalid numeric YT-DLP option: {ytopt!r}"
+                    )
+                    continue
+
             elif value.lower() == 'true':
                 value = True
+
             elif value.lower() == 'false':
                 value = False
-            elif value.startswith(('{', '[', '(')) and value.endswith(('}', ']', ')')):
-                value = eval(value)
+
+            elif (
+                value.startswith(('{', '[', '('))
+                and value.endswith(('}', ']', ')'))
+            ):
+                try:
+                    value = eval(value)
+                except (ValueError, SyntaxError):
+                    LOGGER.warning(
+                        f"Invalid YT-DLP option value: {ytopt!r}"
+                    )
+                    continue
+
             options[key] = value
 
         options['playlist_items'] = '0'
